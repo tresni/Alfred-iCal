@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>action</key>
+	<false/>
+	<key>background</key>
+	<true/>
+	<key>category</key>
+	<string>APPLESCRIPTS</string>
+	<key>command</key>
+	<string>on alfred_script(q)
+	(* Calendar you want to use by default.
+	 * You can also use "using X" to say which calendar to use
+	 * Default: first calendar in iCal
+	 *)
+	set DefaultCalendar to null
+	
+	(* Message w/ Sound alarm defaults
+	 * You can use "alarm X" multiple times to set additional alarms per event
+	 * Default: none
+	 *)
+	set AlarmTimes to {}
+	--set AlarmTimes to {-15, -30}
+	
+	(* Email Alarm defaults
+	 * You can use "email X" multiple times to set additional alarms per event
+	 * Default: none
+	 *)
+	set EmailTimes to {}
+	--set EmailTimes to {-60}
+	
+	(* Meeting Length
+	 * How long to make a meeting last
+	 * Default: 1 hour
+	 *)
+	set MeetingLength to 1
+
+	(* Only edit these if you are trying to change the locale and really
+	 * know what you are doing!
+	 *)
+	set atSep to "at"
+	--	set untilSep to "until"
+	--	set forSep to "for"
+	set onSep to "on"
+	set inSep to "in"
+	set calSep to "using"
+	set alarmSep to "alarm"
+	set todSep to "today"
+	set tomSep to "tomorrow"
+	set attSep to "attendee"
+	
+	(* I suggest you don't edit anything below this line ;-) *)
+	set Seps to {atSep, onSep, inSep, calSep, alarmSep, todSep, tomSep, attSep}
+	
+	set values to {}
+	set mySeps to {}
+	set tempValue to ""
+	
+	set evTest to q as string
+	set text item delimiters to space
+	repeat with value in text items of evTest
+		if value is in Seps then
+			set mySeps to mySeps &amp; value
+			set values to values &amp; tempValue
+			set tempValue to ""
+		else
+			if length of tempValue = 0 then
+				set tempValue to value
+			else
+				set tempValue to tempValue &amp; " " &amp; value
+			end if
+		end if
+	end repeat
+	set values to values &amp; tempValue
+	
+	set obj to item 1 of values
+	set values to items 2 thru end of values
+	
+	set dd to current date
+	set d to ""
+	set h to "0"
+	set min to "00"
+	set alldayFlag to true
+	set l to ""
+	set AttendeesList to {}
+	
+	set sepCount to 1
+	repeat with sep in mySeps
+		set test to sep as string
+		
+		if test is equal to atSep then
+			set r_h to text item sepCount of values
+			if r_h contains "pm" then
+				set h_offset to 12
+			else
+				set h_offset to 0
+			end if
+			
+			set olddelim to text item delimiters
+			set text item delimiters to {"am", "pm"}
+			set r_h to text item 1 of r_h
+			
+			if r_h contains ":" then
+				set text item delimiters to ":"
+				set h to text item 1 of r_h
+				set min to text item 2 of r_h
+			else
+				set h to r_h
+			end if
+			set h to h + h_offset
+			set alldayFlag to false
+			set text item delimiters to olddelim
+		else if test is equal to onSep then
+			set r_d to text item sepCount of values
+			set dd to date r_d
+		else if test is equal to todSep then
+			-- today is assumed
+		else if test is equal to tomSep then
+			set dd to current date
+			set {year:y, month:m, day:d} to (current date)
+			set day of dd to (d + 1)
+		else if test is equal to inSep then
+			set l to text item sepCount of values
+		else if test is equal to calSep then
+			set DefaultCalendar to text item sepCount of values
+		else if test is equal to attSep then
+			set olddelim to text item delimiters
+			set text item delimiters to space
+			repeat with att in text items of text item sepCount of values
+				set AttendeesList to AttendeesList &amp; att
+			end repeat
+			set text item delimiters to olddelim
+		else if test is equal to alarmSep then
+			set alarm to (text item sepCount of values)
+			set emailAlarm to false
+			
+			if alarm contains "email" then
+				set emailAlarm to true
+			end if
+			
+			set olddelim to text item delimiters
+			set text item delimiters to {"email", "sound"}
+			if not length of text item 1 of alarm = 0 then
+				set alarm to text item 1 of alarm
+			else
+				set alarm to text item 2 of alarm
+			end if
+			try
+				set thisTime to alarm as integer
+				if emailAlarm then
+					set EmailTimes to EmailTimes &amp; thisTime
+				else
+					set AlarmTimes to AlarmTimes &amp; thisTime
+				end if
+			on error
+				message_user("Alarm error", "Alarm time of " &amp; alarm &amp; " was invalid and ignored", true)
+			end try
+			set text item delimiters to olddelim
+		end if
+		set sepCount to sepCount + 1
+	end repeat
+	
+	if not alldayFlag then
+		set hours of dd to h
+		set minutes of dd to min
+		set seconds of dd to 0
+	end if
+	
+	tell application "System Events"
+		set isCalRunning to (count of (every process whose bundle identifier is "com.apple.iTunes")) &gt; 0
+	end tell
+	
+	tell application "iCal"
+		if not isCalRunning then activate
+		if DefaultCalendar is null then
+			set DefaultCalendar to name of item 0 of calendars
+		end if
+		
+		set newEvent to make new event in calendar DefaultCalendar with properties {summary:obj, start date:dd, end date:dd + MeetingLength * hours, location:l, allday event:alldayFlag}
+		
+		repeat with alarm in AlarmTimes
+			make new sound alarm at end of sound alarms of newEvent with properties {trigger interval:alarm, sound name:"Sosumi"}
+		end repeat
+		
+		repeat with alarm in EmailTimes
+			make new mail alarm at end of mail alarms of newEvent with properties {trigger interval:alarm}
+		end repeat
+		
+		repeat with att in AttendeesList
+			make new attendee at end of attendees of newEvent with properties {email:att}
+		end repeat
+	end tell
+	message_user("Event added", obj &amp; " created successfully on " &amp; DefaultCalendar, false)
+end alfred_script
+
+on message_user(name, message, isError)
+	tell application "System Events"
+		set isGrowlRunning to (count of (every process whose bundle identifier is "com.Growl.GrowlHelperApp")) &gt; 0
+		
+	end tell
+	
+	if isGrowlRunning then
+		tell application id "com.Growl.GrowlHelperApp"
+			set the allNotificationsList to ¬
+				{"Event added", "Alarm error"}
+			
+			set the enabledNotificationsList to ¬
+				{"Event added", "Alarm error"}
+			
+			register as application ¬
+				"Growl iCal" all notifications allNotificationsList ¬
+				default notifications enabledNotificationsList ¬
+				icon of application "iCal"
+			
+			-- Send a Notification...
+			notify with name ¬
+				name title ¬
+				"iCal for Alfred" description ¬
+				message application name "Growl iCal"
+		end tell
+	else if isError then
+		display dialog message
+	end if
+end message_user</string>
+	<key>disabled</key>
+	<false/>
+	<key>keyword</key>
+	<string>cal</string>
+	<key>parameter</key>
+	<integer>2</integer>
+	<key>subtitle</key>
+	<string>Add event in iCal - what [at time] [on date] [in location] [using calendar] [alarm (type) minutes]+ [attendee email]+</string>
+	<key>title</key>
+	<string>iCal</string>
+</dict>
+</plist>
