@@ -46,6 +46,7 @@ If you you do not specify `using` we'll use the first calendar in iCal to schedu
 ### Alarms ###
 
 By default there are no alarms set.  If you would like to set default alarms modify lines 12 (`AlarmTimes`) and/or 19 (`EmailTimes`) of the script.
+
 ```applescript
 	set AlarmTimes to {}
 ```
